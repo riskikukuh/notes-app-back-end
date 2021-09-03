@@ -2,21 +2,34 @@ require('dotenv').config();
 
 const Hapi = require('@hapi/hapi');
 const Jwt = require('@hapi/jwt');
-const authentications = require('./api/authentications');
-const notes = require('./api/notes');
+
+// Users
 const users = require('./api/users');
-const AuthenticationsServices = require('./services/postgres/AuthenticationsServices');
-const NotesService = require('./services/postgres/NotesService');
 const UsersService = require('./services/postgres/UsersService');
-const NotesValidator = require('./validator/notes/index');
 const UsersValidator = require('./validator/users/index');
-const AuthenticationsValidator = require('./validator/authentications');
+
+// Notes
+const notes = require('./api/notes');
+const NotesService = require('./services/postgres/NotesService');
+const NotesValidator = require('./validator/notes/index');
+
+// Authentications
+const authentications = require('./api/authentications');
+const AuthenticationsServices = require('./services/postgres/AuthenticationsServices');
 const TokenManager = require('./tokenize/TokenManager');
+const AuthenticationsValidator = require('./validator/authentications');
+
+// Collaborations
+const collaborations = require('./api/collaborations');
+const CollaborationsService = require('./services/postgres/CollaborationsService');
+const CollaborationsValidator = require('./validator/collaborations');
 
 const init = async () => {
+  const collaborationsService = new CollaborationsService();
+  const notesService = new NotesService(collaborationsService);
   const authenticationsService = new AuthenticationsServices();
-  const notesService = new NotesService();
   const usersService = new UsersService();
+
   const server = Hapi.server({
     port: process.env.PORT,
     host: process.env.HOST,
@@ -49,31 +62,36 @@ const init = async () => {
     }),
   });
 
-  await server.register({
-    plugin: authentications,
-    options: {
-      authenticationsService,
-      usersService,
-      tokenManager: TokenManager,
-      validator: AuthenticationsValidator,
+  await server.register([
+    {
+      plugin: authentications,
+      options: {
+        authenticationsService,
+        usersService,
+        tokenManager: TokenManager,
+        validator: AuthenticationsValidator,
+      },
+    }, {
+      plugin: notes,
+      options: {
+        service: notesService,
+        validator: NotesValidator,
+      },
+    }, {
+      plugin: users,
+      options: {
+        service: usersService,
+        validator: UsersValidator,
+      },
+    }, {
+      plugin: collaborations,
+      options: {
+        collaborationsService,
+        notesService,
+        validator: CollaborationsValidator,
+      },
     },
-  });
-
-  await server.register({
-    plugin: notes,
-    options: {
-      service: notesService,
-      validator: NotesValidator,
-    },
-  });
-
-  await server.register({
-    plugin: users,
-    options: {
-      service: usersService,
-      validator: UsersValidator,
-    },
-  });
+  ]);
 
   await server.start();
   console.log(`Server berjalan pada ${server.info.uri}`);
